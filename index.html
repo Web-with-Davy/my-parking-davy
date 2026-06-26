@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Parking Davy — Raportează Parcarea Neregulamentară</title>
+  <meta name="description" content="Raportează o parcare neregulamentară instant. My Parking Davy — simplu, rapid, eficient." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- PAGE: HOME (Complaint Form) -->
+<div id="page-home" class="page">
+  <nav>
+    <span class="nav-logo" onclick="navigate('home')">
+      <span class="p-glyph">P</span>MY PARKING DAVY
+    </span>
+    <span class="nav-link" onclick="navigate('login')">Admin</span>
+  </nav>
+
+  <div class="complaint-wrap">
+    <div class="complaint-card fade-in">
+
+      <div id="home-ban-error" style="display:none;" class="ban-screen">
+        <p class="ban-icon">⛔</p>
+        <p class="ban-text">Ai fost blocat de la trimiterea sesizărilor.</p>
+      </div>
+
+      <div id="home-cooldown" style="display:none;" class="ban-screen">
+        <p class="ban-icon">⏳</p>
+        <p class="ban-text">Ai trimis deja o sesizare.</p>
+        <p style="color:rgba(255,255,255,0.4);font-size:.9rem;margin-top:.75rem;">Poți trimite din nou în:</p>
+        <p id="cooldown-timer" style="font-family:var(--font-head);font-size:2.5rem;font-weight:800;color:var(--cyan);text-shadow:var(--cyan-glow);letter-spacing:.12em;margin-top:.5rem;">5:00</p>
+      </div>
+
+      <div id="home-form-content" style="display:none;">
+        <div class="form-header">
+          <h1 class="form-title">MY <span class="accent">PARKING</span> DAVY</h1>
+          <p class="form-subtitle">Ai ceva de spus despre mașina mea? Lasă un mesaj mai jos.</p>
+        </div>
+
+        <div class="success-screen" id="success-screen">
+          <div class="success-icon">✓</div>
+          <h3>Sesizare trimisă!</h3>
+          <p>Mulțumim. Sesizarea ta a fost înregistrată cu succes.</p>
+        </div>
+
+        <div id="complaint-form" class="form-grid">
+          <div class="field">
+            <label for="type-select">Tip Problemă *</label>
+            <select id="type-select">
+              <option value="">— Selectează —</option>
+              <option value="Parcare neregulamentară">Parcare neregulamentară</option>
+              <option value="Blochează accesul">Blochează accesul</option>
+              <option value="Zgomot">Zgomot</option>
+              <option value="Altele">Altele</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="desc-input">Descriere <span style="opacity:.4;">(max 500 caractere)</span></label>
+            <textarea id="desc-input" maxlength="500" placeholder="Descrie situația…" oninput="updateCharCount()"></textarea>
+            <span class="char-counter"><span id="char-count">0</span> / 500</span>
+          </div>
+          <div class="field">
+            <label>Fotografie <span style="opacity:.4;">(opțional)</span></label>
+            <div class="photo-upload-area" id="photo-area" onclick="document.getElementById('photo-file').click()">
+              <input type="file" id="photo-file" accept="image/*" onchange="handlePhotoUpload(event)" />
+              <span id="photo-label">📷 Apasă pentru a adăuga o fotografie</span>
+            </div>
+            <img class="photo-preview" id="photo-preview" src="" alt="Previzualizare" />
+          </div>
+          <div id="form-error" class="msg msg-error"></div>
+          <div class="loading-row">
+            <button class="btn btn-full" id="submit-btn" onclick="submitComplaint()">Trimite Sesizarea</button>
+            <div class="spinner" id="submit-spinner"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="home-loading" style="text-align:center;padding:3rem 0;">
+        <div class="spinner show" style="margin:0 auto;width:32px;height:32px;border-width:3px;"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- PAGE: LOGIN -->
+<div id="page-login" class="page">
+  <nav>
+    <span class="nav-logo" onclick="navigate('home')">
+      <span class="p-glyph">P</span>MY PARKING DAVY
+    </span>
+    <span class="nav-link" onclick="navigate('home')">← Înapoi</span>
+  </nav>
+  <div class="login-wrap">
+    <div class="login-card card fade-in">
+      <h2>Autentificare Admin</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" autocomplete="username" placeholder="admin@example.com" />
+        </div>
+        <div class="field">
+          <label for="login-password">Parolă</label>
+          <input type="password" id="login-password" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <div id="login-error" class="msg msg-error"></div>
+        <div id="login-lockout" class="msg msg-error"></div>
+        <div class="loading-row">
+          <button class="btn btn-full" id="login-btn" onclick="doLogin()">Autentifică-te</button>
+          <div class="spinner" id="login-spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE: ADMIN -->
+<div id="page-admin" class="page">
+  <nav>
+    <span class="nav-logo" onclick="navigate('home')">
+      <span class="p-glyph">P</span>MY PARKING DAVY
+    </span>
+    <button class="btn btn-sm" id="logout-btn" onclick="doLogout()">Deconectare</button>
+  </nav>
+  <div class="admin-wrap">
+
+    <div class="card fade-in">
+      <div class="admin-top-bar">
+        <p class="section-title">Sesizări Primite</p>
+        <div class="loading-row">
+          <button class="btn btn-sm" onclick="loadComplaints()">↺ Reîncarcă</button>
+          <div class="spinner" id="table-spinner"></div>
+        </div>
+      </div>
+
+
+      <div id="complaints-msg" class="msg msg-info"></div>
+
+      <div class="table-wrap">
+        <table id="complaints-table">
+          <thead>
+            <tr>
+              <th>Dată / Oră</th>
+              <th>Tip</th>
+              <th>Descriere</th>
+              <th>IP</th>
+              <th>Dispozitiv</th>
+              <th>Status</th>
+              <th>Acțiuni</th>
+            </tr>
+          </thead>
+          <tbody id="complaints-tbody"></tbody>
+        </table>
+      </div>
+      <div id="empty-state" class="empty-state" style="display:none;">Nicio sesizare găsită.</div>
+      <div class="pagination">
+        <button class="btn btn-sm" id="prev-page" onclick="changePage(-1)">← Anterior</button>
+        <span class="page-info" id="page-info">1 / 1</span>
+        <button class="btn btn-sm" id="next-page" onclick="changePage(1)">Următor →</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
