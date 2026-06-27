@@ -176,9 +176,7 @@ async function doLogin() {
       navigate('admin');
       loadComplaints();
       initNotifButton();
-      if (Notification.permission === 'granted' && sb && !realtimeChannel) {
-        startRealtimeListener();
-      }
+      startRealtimeListener();
     }
   } catch { setMsg('login-error', 'Eroare de conexiune. Încearcă din nou.', 'error'); }
   hide('login-spinner');
@@ -503,22 +501,40 @@ function initNotifButton() {
 }
 
 function startRealtimeListener() {
-  if (!sb || realtimeChannel) return;
+  if (!sb) return;
+  if (realtimeChannel) {
+    console.log('[Realtime] Channel deja activ, skip.');
+    return;
+  }
 
+  console.log('[Realtime] Pornire canal complaints...');
   realtimeChannel = sb
-    .channel('complaints-realtime')
+    .channel('complaints-realtime', { config: { broadcast: { self: false } } })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' }, payload => {
+      console.log('[Realtime] Sesizare nouă primită:', payload.new);
       handleNewComplaint(payload.new);
     })
     .subscribe(status => {
       console.log('[Realtime] Status:', status);
+      if (status === 'SUBSCRIBED') {
+        console.log('[Realtime] ✅ Conectat și ascultă sesizări noi.');
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        console.warn('[Realtime] ⚠️ Canal căzut:', status, '— reîncercare în 5s...');
+        realtimeChannel = null;
+        setTimeout(() => {
+          getSession().then(session => {
+            if (session && parseHash() === 'admin') startRealtimeListener();
+          });
+        }, 5000);
+      }
     });
 }
 
 function stopRealtimeListener() {
   if (realtimeChannel && sb) {
-    sb.removeChannel(realtimeChannel);
+    const ch = realtimeChannel;
     realtimeChannel = null;
+    sb.removeChannel(ch).then(() => console.log('[Realtime] Canal oprit.'));
   }
 }
 
@@ -581,9 +597,7 @@ window.navigate = function (page) {
   _origNavigate(page);
   if (page === 'admin') {
     initNotifButton();
-    if (sb && !realtimeChannel) {
-      startRealtimeListener();
-    }
+    startRealtimeListener();
   } else if (page !== 'login') {
     stopRealtimeListener();
   }
