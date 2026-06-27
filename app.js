@@ -175,6 +175,10 @@ async function doLogin() {
       clearAttempts();
       navigate('admin');
       loadComplaints();
+      initNotifButton();
+      if (Notification.permission === 'granted' && sb && !realtimeChannel) {
+        startRealtimeListener();
+      }
     }
   } catch { setMsg('login-error', 'Eroare de conexiune. Încearcă din nou.', 'error'); }
   hide('login-spinner');
@@ -558,7 +562,7 @@ window.navigate = function (page) {
     if (Notification.permission === 'granted' && sb && !realtimeChannel) {
       startRealtimeListener();
     }
-  } else {
+  } else if (page !== 'login') {
     stopRealtimeListener();
   }
 };
