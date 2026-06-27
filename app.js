@@ -430,6 +430,17 @@ async function registerSW() {
   try {
     swRegistration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
     console.log('[SW] Înregistrat cu succes.');
+    const reg = await navigator.serviceWorker.ready;
+    if (reg.active) {
+      reg.active.postMessage({
+        type: 'SET_CREDENTIALS',
+        supabaseUrl: SUPABASE_URL,
+        supabaseKey: SUPABASE_ANON_KEY
+      });
+    }
+    if (Notification.permission === 'granted') {
+      await registerPeriodicSync();
+    }
   } catch (e) {
     console.warn('[SW] Eroare la înregistrare:', e);
   }
@@ -468,8 +479,26 @@ async function requestNotifPermission() {
   if (perm === 'granted') {
     showToast('Notificări activate! 🔔', 'Vei primi notificări când primești sesizări noi.');
     startRealtimeListener();
+    await registerPeriodicSync();
   } else {
     showToast('Notificări blocate', 'Activează notificările din setările browserului.');
+  }
+}
+
+async function registerPeriodicSync() {
+  if (!swRegistration) return;
+  try {
+    const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+    if (status.state === 'granted') {
+      await swRegistration.periodicSync.register('check-new-complaints', {
+        minInterval: 60 * 1000
+      });
+      console.log('[PeriodicSync] ✅ Înregistrat — verificare sesizări în background.');
+    } else {
+      console.log('[PeriodicSync] Permisiune refuzată sau nu e suportat.');
+    }
+  } catch (e) {
+    console.log('[PeriodicSync] Nu este suportat pe acest browser:', e.message);
   }
 }
 
