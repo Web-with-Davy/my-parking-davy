@@ -123,7 +123,7 @@ async function initHomePage() {
         }
         window._userIp = ip;
       }
-    } catch {}
+    } catch { }
   } else {
     window._userIp = null;
   }
@@ -147,7 +147,7 @@ function startCountdown(remainingMs, cooldownEl, formContent) {
     }
     const m = Math.floor(ms / 60000);
     const s = Math.floor((ms % 60000) / 1000);
-    document.getElementById('cooldown-timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+    document.getElementById('cooldown-timer').textContent = `${m}:${s.toString().padStart(2, '0')}`;
   }
   tick();
   cooldownInterval = setInterval(tick, 1000);
@@ -241,9 +241,9 @@ function renderTable() {
     tr.innerHTML = `
       <td>${date}</td>
       <td>${type}</td>
-      <td title="${(c.description||'').replace(/"/g,'&quot;')}">${desc}</td>
+      <td title="${(c.description || '').replace(/"/g, '&quot;')}">${desc}</td>
       <td style="font-family:monospace;font-size:.75rem;white-space:nowrap;">${ip}</td>
-      <td title="${(c.user_agent||'').replace(/"/g,'&quot;')}" style="font-size:.7rem;color:rgba(255,255,255,.35);">${ua}</td>
+      <td title="${(c.user_agent || '').replace(/"/g, '&quot;')}" style="font-size:.7rem;color:rgba(255,255,255,.35);">${ua}</td>
       <td>${status}</td>
       <td style="white-space:nowrap;display:flex;flex-direction:column;gap:.3rem;">${banBtn}${photoBtn}${deleteBtn}</td>
     `;
@@ -330,7 +330,7 @@ async function submitComplaint() {
   try {
     let ip = window._userIp || null;
     if (!ip) {
-      try { const r = await fetch('https://api.ipify.org?format=json'); ip = (await r.json()).ip; } catch {}
+      try { const r = await fetch('https://api.ipify.org?format=json'); ip = (await r.json()).ip; } catch { }
     }
     const payload = {
       complaint_type: type,
@@ -396,3 +396,171 @@ window.addEventListener('hashchange', () => {
 });
 
 init();
+
+let deferredInstallPrompt = null;
+let swRegistration = null;
+let realtimeChannel = null;
+let toastTimeout = null;
+async function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    swRegistration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    console.log('[SW] Înregistrat cu succes.');
+  } catch (e) {
+    console.warn('[SW] Eroare la înregistrare:', e);
+  }
+}
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'flex';
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'none';
+  showToast('Aplicație instalată! ✓', 'My Parking Davy a fost instalat pe dispozitivul tău.');
+});
+
+async function installPWA() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+async function requestNotifPermission() {
+  if (!('Notification' in window)) {
+    alert('Browserul tău nu suportă notificări.');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  updateNotifButton(perm);
+  if (perm === 'granted') {
+    showToast('Notificări activate! 🔔', 'Vei primi notificări când primești sesizări noi.');
+    startRealtimeListener();
+  } else {
+    showToast('Notificări blocate', 'Activează notificările din setările browserului.');
+  }
+}
+
+function updateNotifButton(permission) {
+  const btn = document.getElementById('notif-btn');
+  if (!btn) return;
+  if (permission === 'granted') {
+    btn.textContent = '🔔 Notificări Active';
+    btn.style.color = 'var(--green)';
+    btn.style.borderColor = 'var(--green)';
+    btn.onclick = null;
+    btn.style.cursor = 'default';
+  } else if (permission === 'denied') {
+    btn.style.display = 'none';
+  } else {
+    btn.textContent = '🔔 Notificări';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    btn.onclick = requestNotifPermission;
+  }
+}
+
+function initNotifButton() {
+  const btn = document.getElementById('notif-btn');
+  if (!btn) return;
+  if (!('Notification' in window)) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  updateNotifButton(Notification.permission);
+}
+
+function startRealtimeListener() {
+  if (!sb || realtimeChannel) return;
+
+  realtimeChannel = sb
+    .channel('complaints-realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'complaints' }, payload => {
+      handleNewComplaint(payload.new);
+    })
+    .subscribe(status => {
+      console.log('[Realtime] Status:', status);
+    });
+}
+
+function stopRealtimeListener() {
+  if (realtimeChannel && sb) {
+    sb.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
+function handleNewComplaint(complaint) {
+  const type = complaint.complaint_type || 'Sesizare';
+  const desc = (complaint.description || '').substring(0, 80);
+  const body = `${type}${desc ? ': ' + desc : ''}`;
+
+  showToast('🚗 Sesizare Nouă!', body);
+
+  if (Notification.permission === 'granted') {
+    sendSystemNotif('🚗 Sesizare Nouă!', body);
+  }
+  if (parseHash() === 'admin') {
+    loadComplaints();
+  }
+}
+
+function sendSystemNotif(title, body) {
+  if (swRegistration && swRegistration.active) {
+    swRegistration.active.postMessage({
+      type: 'SHOW_NOTIFICATION',
+      title,
+      body,
+      url: location.origin + location.pathname + '#admin'
+    });
+  } else if (Notification.permission === 'granted') {
+    new Notification(title, {
+      body,
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: 'new-complaint-' + Date.now()
+    });
+  }
+}
+
+function showToast(title, msg) {
+  const toast = document.getElementById('notif-toast');
+  if (!toast) return;
+  const titleEl = toast.querySelector('.toast-title');
+  const msgEl = document.getElementById('toast-msg-text');
+  const timeEl = document.getElementById('toast-msg-time');
+  if (titleEl) titleEl.textContent = title;
+  if (msgEl) msgEl.textContent = msg;
+  if (timeEl) timeEl.textContent = new Date().toLocaleTimeString('ro-RO');
+
+  toast.classList.add('show');
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => closeToast(), 7000);
+}
+
+function closeToast() {
+  const toast = document.getElementById('notif-toast');
+  if (toast) toast.classList.remove('show');
+  if (toastTimeout) clearTimeout(toastTimeout);
+}
+
+const _origNavigate = navigate;
+window.navigate = function (page) {
+  _origNavigate(page);
+  if (page === 'admin') {
+    initNotifButton();
+    if (Notification.permission === 'granted' && sb && !realtimeChannel) {
+      startRealtimeListener();
+    }
+  } else {
+    stopRealtimeListener();
+  }
+};
+
+registerSW();
