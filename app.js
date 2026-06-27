@@ -1,5 +1,6 @@
 const SUPABASE_URL = 'https://haeuukipjehwqwpnmqpc.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_aGZiCX-Ol2GibEJr6d8bUw_jpGbW5iU';
+const VAPID_PUBLIC_KEY = 'BOvLBNqzajdkhAXaAQcTu8wxTmuf_XJG9iroTb6EuZJnhmnHQ6u_7TDZqqLjyCVV5wNc8mhKT62ChrLcN0nIB28';
 
 let sb = null;
 let photoBase64 = null;
@@ -439,6 +440,7 @@ async function registerSW() {
       });
     }
     if (Notification.permission === 'granted') {
+      await subscribeToPush();
       await registerPeriodicSync();
     }
   } catch (e) {
@@ -479,9 +481,40 @@ async function requestNotifPermission() {
   if (perm === 'granted') {
     showToast('Notificări activate! 🔔', 'Vei primi notificări când primești sesizări noi.');
     startRealtimeListener();
+    await subscribeToPush();
     await registerPeriodicSync();
   } else {
     showToast('Notificări blocate', 'Activează notificările din setările browserului.');
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const pad = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+}
+
+async function subscribeToPush() {
+  if (!swRegistration || !sb) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+    const { endpoint, keys } = sub.toJSON();
+    const { error } = await sb.from('push_subscriptions').upsert(
+      { endpoint, keys_p256dh: keys.p256dh, keys_auth: keys.auth },
+      { onConflict: 'endpoint' }
+    );
+    if (error) console.warn('[Push] Eroare la salvare:', error.message);
+    else console.log('[Push] ✅ Subscripție Web Push salvată.');
+  } catch (e) {
+    console.warn('[Push] Eroare subscripție:', e.message);
   }
 }
 
