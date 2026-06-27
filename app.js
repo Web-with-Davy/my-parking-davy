@@ -69,18 +69,18 @@ async function router() {
   const page = parseHash();
   if (page === 'admin') {
     const session = await getSession();
-    if (!session) { navigate('login'); return; }
-    navigate('admin');
+    if (!session) { window.navigate('login'); return; }
+    window.navigate('admin');
     loadComplaints();
     return;
   }
   if (page === 'login') {
     const session = await getSession();
-    if (session) { navigate('admin'); loadComplaints(); return; }
-    navigate('login');
+    if (session) { window.navigate('admin'); loadComplaints(); return; }
+    window.navigate('login');
     return;
   }
-  navigate('home');
+  window.navigate('home');
   initHomePage();
 }
 
@@ -383,7 +383,29 @@ async function init() {
   const script = document.createElement('script');
   script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
   script.onload = async () => {
-    try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    try {
+      sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false
+        }
+      });
+      sb.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          if (parseHash() === 'login' || parseHash() === 'home') {
+            window.navigate('admin');
+            loadComplaints();
+          }
+        } else if (event === 'SIGNED_OUT') {
+          stopRealtimeListener();
+          window.navigate('home');
+          initHomePage();
+        } else if (event === 'TOKEN_REFRESHED') {
+          console.log('[Auth] Token reînnoit automat.');
+        }
+      });
+    }
     catch { navigate('home'); initHomePage(); return; }
     const pw = document.getElementById('login-password');
     if (pw) pw.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -559,12 +581,23 @@ window.navigate = function (page) {
   _origNavigate(page);
   if (page === 'admin') {
     initNotifButton();
-    if (Notification.permission === 'granted' && sb && !realtimeChannel) {
+    if (sb && !realtimeChannel) {
       startRealtimeListener();
     }
   } else if (page !== 'login') {
     stopRealtimeListener();
   }
 };
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && parseHash() === 'admin') {
+    getSession().then(session => {
+      if (session && sb && !realtimeChannel) {
+        console.log('[Realtime] Reconectare după revenire în prim-plan.');
+        startRealtimeListener();
+      }
+    });
+  }
+});
 
 registerSW();
